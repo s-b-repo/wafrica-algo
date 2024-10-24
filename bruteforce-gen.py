@@ -1,20 +1,5 @@
 from datetime import datetime, timedelta
-
-def calculate_luhn_sa(id_number):
-    """
-    Calculate the Luhn checksum for a South African ID number.
-    The Luhn algorithm is applied in reverse, where every second digit from the right is doubled.
-    """
-    total = 0
-    reverse_digits = id_number[::-1]
-    for i, digit in enumerate(reverse_digits):
-        n = int(digit)
-        if i % 2 == 1:  # Apply doubling for every second digit from the right
-            n *= 2
-            if n > 9:
-                n -= 9
-        total += n
-    return total % 10 == 0
+from za_id_number import SouthAfricanIdentityNumber
 
 def generate_dates_in_range(start_date, end_date):
     """
@@ -38,18 +23,17 @@ def generate_dates_in_range(start_date, end_date):
     
     return date_list
 
-def generate_valid_sa_id_numbers(start_date, end_date, gender, citizenship):
+def generate_and_save_valid_sa_id_numbers(start_date, end_date, gender, citizenship, output_file):
     """
     Generate all possible valid South African ID numbers within a date range, gender, and citizenship.
-    
+    Valid IDs are saved to a .txt file.
+
     Parameters:
     start_date (str): The start date in 'YYYYMMDD' format.
     end_date (str): The end date in 'YYYYMMDD' format.
     gender (str): 'female' or 'male'.
     citizenship (int): 0 for SA citizen, 1 for permanent resident.
-    
-    Returns:
-    list: List of valid South African ID numbers.
+    output_file (str): The file path to save the valid IDs.
     """
     valid_ids = []
     
@@ -64,20 +48,29 @@ def generate_valid_sa_id_numbers(start_date, end_date, gender, citizenship):
     c_value = str(citizenship)
     a_value = '8'
     
-    # Iterate over each date and generate possible IDs
-    for yymmdd in dates:
-        for ssss in range(ssss_start, ssss_end + 1):
-            ssss_str = str(ssss).zfill(4)
-            
-            # Form the first 10 digits of the ID
-            id_base = f"{yymmdd}{ssss_str}{c_value}{a_value}"
-            
-            # Brute-force the last digit (Z)
-            for z in range(10):
-                full_id = f"{id_base}{z}"
-                if calculate_luhn_sa(full_id):
-                    valid_ids.append(full_id)
-    
+    with open(output_file, 'w') as f:
+        # Iterate over each date and generate possible IDs
+        for yymmdd in dates:
+            for ssss in range(ssss_start, ssss_end + 1):
+                ssss_str = str(ssss).zfill(4)
+                
+                # Form the first 10 digits of the ID
+                id_base = f"{yymmdd}{ssss_str}{c_value}{a_value}"
+                
+                # Brute-force the last digit (Z)
+                for z in range(10):
+                    full_id = f"{id_base}{z}"
+                    try:
+                        # Validate ID using the za-id-number library
+                        id_number = SouthAfricanIdentityNumber(full_id)
+                        if id_number.valid:
+                            # If valid, write the ID to the file
+                            f.write(full_id + "\n")
+                            valid_ids.append(full_id)
+                    except ValueError:
+                        # If ID is invalid, the library raises an exception
+                        continue
+
     return valid_ids
 
 # Example usage
@@ -85,11 +78,12 @@ start_date = "19920101"  # Start date in 'YYYYMMDD' format
 end_date = "19921231"    # End date in 'YYYYMMDD' format
 gender = "female"        # Gender: 'female' or 'male'
 citizenship = 0          # Citizenship: 0 for SA citizen, 1 for permanent resident
+output_file = "valid_sa_ids.txt"  # Output file to save valid IDs
 
-# Generate valid South African ID numbers
-valid_id_numbers = generate_valid_sa_id_numbers(start_date, end_date, gender, citizenship)
+# Generate and save valid South African ID numbers
+valid_id_numbers = generate_and_save_valid_sa_id_numbers(start_date, end_date, gender, citizenship, output_file)
 
 # Display the first 10 valid IDs for demonstration
 print("First 10 valid ID numbers:", valid_id_numbers[:10])
-print("Total number of valid IDs generated:", len(valid_id_numbers))
-
+print(f"Total number of valid IDs generated: {len(valid_id_numbers)}")
+print(f"Valid IDs saved to: {output_file}")
