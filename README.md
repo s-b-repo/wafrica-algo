@@ -1,4 +1,6 @@
 #credit
+###
+https://pypi.org/project/za-id-number/
 https://medium.com/@ryanneilparker/sa-id-fumble-how-south-africa-managed-to-incorrectly-apply-the-luhn-algorithm-352dd6f10738
 # South African ID Number Generator
 
