@@ -1,89 +1,102 @@
-from datetime import datetime, timedelta
+import os
 from za_id_number import SouthAfricanIdentityNumber
+from za_id_number.exceptions import InvalidIdentityNumberException
 
-def generate_dates_in_range(start_date, end_date):
-    """
-    Generate all valid dates in YYMMDD format within the specified date range.
-    
-    Parameters:
-    start_date (str): Start date in 'YYYYMMDD' format.
-    end_date (str): End date in 'YYYYMMDD' format.
-    
-    Returns:
-    list: List of dates in 'YYMMDD' format.
-    """
-    date_list = []
-    current_date = datetime.strptime(start_date, "%Y%m%d")
-    end_date = datetime.strptime(end_date, "%Y%m%d")
-    delta = timedelta(days=1)
-    
-    while current_date <= end_date:
-        date_list.append(current_date.strftime("%y%m%d"))
-        current_date += delta
-    
-    return date_list
+# Function to check if a given year is a leap year
+def is_leap_year(year):
+    """Check if a given year is a leap year."""
+    if year % 400 == 0:
+        return True
+    elif year % 100 == 0:
+        return False
+    elif year % 4 == 0:
+        return True
+    return False
 
-def generate_and_save_valid_sa_id_numbers(start_date, end_date, gender, citizenship, output_file):
-    """
-    Generate all possible valid South African ID numbers within a date range, gender, and citizenship.
-    Valid IDs are saved to a .txt file.
+# Function to calculate the Luhn checksum digit (left-to-right for SA ID numbers)
+def calculate_luhn_left_to_right(id_number):
+    """Calculate Luhn checksum for SA ID numbers (left-to-right)."""
+    digits = [int(d) for d in id_number]
+    checksum = 0
+    for i in range(len(digits)):
+        if i % 2 == 0:  # Odd positions (0-based index, left-to-right)
+            double = digits[i] * 2
+            checksum += double if double < 10 else double - 9
+        else:  # Even positions
+            checksum += digits[i]
+    return (10 - (checksum % 10)) % 10
 
-    Parameters:
-    start_date (str): The start date in 'YYYYMMDD' format.
-    end_date (str): The end date in 'YYYYMMDD' format.
-    gender (str): 'female' or 'male'.
-    citizenship (int): 0 for SA citizen, 1 for permanent resident.
-    output_file (str): The file path to save the valid IDs.
-    """
-    valid_ids = []
-    
-    # Set SSSS range based on gender
-    ssss_start = 0 if gender.lower() == 'female' else 5000
-    ssss_end = 4999 if gender.lower() == 'female' else 9999
-    
-    # Generate all valid dates in the specified range
-    dates = generate_dates_in_range(start_date, end_date)
-    
-    # Citizenship and A value (typically set to 8)
-    c_value = str(citizenship)
-    a_value = '8'
-    
-    with open(output_file, 'w') as f:
-        # Iterate over each date and generate possible IDs
-        for yymmdd in dates:
-            for ssss in range(ssss_start, ssss_end + 1):
-                ssss_str = str(ssss).zfill(4)
-                
-                # Form the first 10 digits of the ID
-                id_base = f"{yymmdd}{ssss_str}{c_value}{a_value}"
-                
-                # Brute-force the last digit (Z)
-                for z in range(10):
-                    full_id = f"{id_base}{z}"
-                    try:
-                        # Validate ID using the za-id-number library
-                        id_number = SouthAfricanIdentityNumber(full_id)
-                        if id_number.valid:
-                            # If valid, write the ID to the file
-                            f.write(full_id + "\n")
-                            valid_ids.append(full_id)
-                    except ValueError:
-                        # If ID is invalid, the library raises an exception
-                        continue
+# Function to generate all valid ID numbers and save them to a text file
+def generate_all_valid_ids(start_year=1900, end_year=2023, file_name="valid_ids.txt"):
+    """Generate all valid South African ID numbers and save to a file."""
+    # Ensure output directory exists
+    try:
+        os.makedirs(os.path.dirname(file_name), exist_ok=True)
+    except Exception as e:
+        if os.path.dirname(file_name):  # Ignore empty paths (current dir)
+            print(f"Error creating directory: {e}")
+            return
 
-    return valid_ids
+    # Buffer to reduce frequent disk writes
+    buffer_size = 100000  # Adjust the size based on memory availability
+    buffer = []
 
-# Example usage
-start_date = "19920101"  # Start date in 'YYYYMMDD' format
-end_date = "19921231"    # End date in 'YYYYMMDD' format
-gender = "female"        # Gender: 'female' or 'male'
-citizenship = 0          # Citizenship: 0 for SA citizen, 1 for permanent resident
-output_file = "valid_sa_ids.txt"  # Output file to save valid IDs
+    try:
+        with open(file_name, "w") as file:
+            # Loop through all possible years, months, and days
+            for year in range(start_year % 100, (end_year % 100) + 1):  # YY (00-99)
+                full_year = start_year + year
+                for month in range(1, 13):  # MM (01-12)
+                    # Determine days in the month
+                    if month == 2:  # February (leap year check)
+                        days_in_month = 29 if is_leap_year(full_year) else 28
+                    elif month in [4, 6, 9, 11]:  # April, June, September, November
+                        days_in_month = 30
+                    else:
+                        days_in_month = 31
 
-# Generate and save valid South African ID numbers
-valid_id_numbers = generate_and_save_valid_sa_id_numbers(start_date, end_date, gender, citizenship, output_file)
+                    for day in range(1, days_in_month + 1):  # DD (01-31)
+                        # Format the year, month, and day as strings
+                        yy = f"{year:02d}"
+                        mm = f"{month:02d}"
+                        dd = f"{day:02d}"
 
-# Display the first 10 valid IDs for demonstration
-print("First 10 valid ID numbers:", valid_id_numbers[:10])
-print(f"Total number of valid IDs generated: {len(valid_id_numbers)}")
-print(f"Valid IDs saved to: {output_file}")
+                        # Generate IDs for females (0000-4999) and males (5000-9999)
+                        for gender in range(0, 10000):  # SSSS (0000-9999)
+                            ssss = f"{gender:04d}"
+
+                            # Citizenship (0 for South African, 1 for Permanent Resident)
+                            for citizenship in range(0, 2):  # C (0 or 1)
+                                id_number_without_checksum = f"{yy}{mm}{dd}{ssss}{citizenship}"
+
+                                # Calculate the Luhn checksum using left-to-right method
+                                checksum = calculate_luhn_left_to_right(id_number_without_checksum)
+
+                                # Form the full valid ID
+                                valid_id = f"{id_number_without_checksum}{checksum}"
+
+                                # Validate the ID using the za-id-number library
+                                try:
+                                    sa_id = SouthAfricanIdentityNumber(valid_id)
+                                    if sa_id.is_valid():
+                                        # Add valid ID to buffer if successfully validated
+                                        buffer.append(valid_id)
+                                except InvalidIdentityNumberException:
+                                    # Skip invalid IDs
+                                    continue
+
+                                # Write to file when buffer reaches threshold
+                                if len(buffer) >= buffer_size:
+                                    file.write("\n".join(buffer) + "\n")
+                                    buffer.clear()
+
+            # Write any remaining IDs in the buffer
+            if buffer:
+                file.write("\n".join(buffer) + "\n")
+
+        print(f"ID generation complete. Successfully validated IDs saved to {file_name}")
+    except Exception as e:
+        print(f"Error writing to file: {e}")
+
+# Example usage to generate all IDs from 1900 to 2023
+generate_all_valid_ids(1900, 2023)
