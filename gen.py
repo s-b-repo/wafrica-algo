@@ -1,4 +1,6 @@
 import os
+from za_id_number import SouthAfricanIdentityNumber
+from za_id_number.exceptions import InvalidIdentityNumberException
 
 # Function to check if a given year is a leap year
 def is_leap_year(year):
@@ -76,8 +78,15 @@ def generate_all_valid_ids(start_year=1900, end_year=2023, file_name="valid_ids.
                                 # Form the full valid ID
                                 valid_id = f"{id_number_without_checksum}{checksum}"
 
-                                # Add valid ID to buffer
-                                buffer.append(valid_id)
+                                # Validate the ID using the za-id-number library
+                                try:
+                                    sa_id = SouthAfricanIdentityNumber(valid_id)
+                                    if sa_id.is_valid():
+                                        # Add valid ID to buffer if successfully validated
+                                        buffer.append(valid_id)
+                                except InvalidIdentityNumberException:
+                                    # Skip invalid IDs
+                                    continue
 
                                 # Write to file when buffer reaches threshold
                                 if len(buffer) >= buffer_size:
@@ -88,7 +97,7 @@ def generate_all_valid_ids(start_year=1900, end_year=2023, file_name="valid_ids.
             if buffer:
                 file.write("\n".join(buffer) + "\n")
 
-        print(f"ID generation complete. Saved to {file_name}")
+        print(f"ID generation complete. Successfully validated IDs saved to {file_name}")
     except Exception as e:
         print(f"Error writing to file: {e}")
 
