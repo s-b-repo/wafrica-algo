@@ -1,11 +1,21 @@
-import itertools
+# Function to check if a given year is a leap year
+def is_leap_year(year):
+    """Check if a given year is a leap year."""
+    if year % 400 == 0:
+        return True
+    elif year % 100 == 0:
+        return False
+    elif year % 4 == 0:
+        return True
+    return False
 
 # Function to calculate the Luhn checksum digit (left-to-right for SA ID numbers)
 def calculate_luhn_left_to_right(id_number):
+    """Calculate Luhn checksum for SA ID numbers (left-to-right)."""
     digits = [int(d) for d in id_number]
     checksum = 0
     for i in range(len(digits)):
-        if i % 2 == 0:  # Odd positions (from left, 0-based index)
+        if i % 2 == 0:  # Odd positions (0-based index, left-to-right)
             double = digits[i] * 2
             checksum += double if double < 10 else double - 9
         else:  # Even positions
@@ -14,15 +24,23 @@ def calculate_luhn_left_to_right(id_number):
 
 # Function to generate all valid ID numbers and save them to a text file
 def generate_all_valid_ids(start_year=1900, end_year=2023, file_name="valid_ids.txt"):
+    """Generate all valid South African ID numbers and save to a file."""
     with open(file_name, "w") as file:
         # Loop through all possible years, months, and days
         for year in range(start_year % 100, (end_year % 100) + 1):  # YY (00-99)
             for month in range(1, 13):  # MM (01-12)
                 for day in range(1, 32):  # DD (01-31)
-                    if month == 2 and day > 28:  # Skip invalid February dates
+                    # Handle leap years for February
+                    if month == 2:
+                        if is_leap_year(start_year + year) and day > 29:  # Leap year February
+                            continue
+                        elif not is_leap_year(start_year + year) and day > 28:  # Non-leap year February
+                            continue
+                    # Skip invalid days in months with 30 days
+                    if month in [4, 6, 9, 11] and day > 30:
                         continue
-                    if month in [4, 6, 9, 11] and day > 30:  # Skip invalid days in 30-day months
-                        continue
+
+                    # Format the year, month, and day as strings
                     yy = f"{year:02d}"
                     mm = f"{month:02d}"
                     dd = f"{day:02d}"
