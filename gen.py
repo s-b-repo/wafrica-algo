@@ -1,82 +1,199 @@
+#!/usr/bin/env python3
+"""South African ID number generator.
+
+Generates valid SA ID numbers for specified date ranges using the
+standard Luhn algorithm for check digit computation.
+"""
+
+import argparse
+import calendar
+import multiprocessing as mp
 import os
-from za_id_number import SouthAfricanIdentityNumber
-from za_id_number.exceptions import InvalidIdentityNumberException
+import sys
+import time
 
-def is_leap_year(year):
-    """Check if a given year is a leap year."""
-    if year % 400 == 0:
-        return True
-    elif year % 100 == 0:
-        return False
-    elif year % 4 == 0:
-        return True
-    return False
 
-def calculate_luhn_left_to_right(id_number):
-    """Calculate Luhn checksum for SA ID numbers (left-to-right)."""
-    digits = [int(d) for d in id_number]
-    checksum = 0
-    for i in range(len(digits)):
-        if i % 2 == 0:  # Odd positions (0-based index, left-to-right)
-            double = digits[i] * 2
-            checksum += double if double < 10 else double - 9
-        else:  # Even positions
-            checksum += digits[i]
-    return (10 - (checksum % 10)) % 10
+def luhn_check_digit(payload):
+    """Compute Luhn check digit for a 12-digit SA ID payload."""
+    total = 0
+    for i, ch in enumerate(payload):
+        d = int(ch)
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return (10 - total % 10) % 10
 
-def generate_all_valid_ids(start_year=1900, end_year=2023, file_name="valid_ids.txt"):
-    """Generate all valid South African ID numbers and save to a file."""
-    try:
-        os.makedirs(os.path.dirname(file_name), exist_ok=True)
-    except Exception as e:
-        print(f"Error creating directory: {e}")
+
+def generate_ids_for_month(args):
+    """Generate all valid IDs for a single year-month pair."""
+    full_year, month = args
+    yy = f"{full_year % 100:02d}"
+    mm = f"{month:02d}"
+    _, days_in_month = calendar.monthrange(full_year, month)
+
+    ids = []
+    for day in range(1, days_in_month + 1):
+        dd = f"{day:02d}"
+        prefix = f"{yy}{mm}{dd}"
+        for seq in range(10000):
+            ssss = f"{seq:04d}"
+            for cit in (0, 1):
+                payload = f"{prefix}{ssss}{cit}8"
+                ids.append(f"{payload}{luhn_check_digit(payload)}")
+    return ids
+
+
+def luhn_verify(id_str):
+    """Verify a 13-digit ID passes the Luhn checksum."""
+    total = 0
+    for i, ch in enumerate(reversed(id_str)):
+        d = int(ch)
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
+def validate_batch(ids):
+    """Filter a batch using inline Luhn + date validation (no external lib)."""
+    valid = []
+    for id_str in ids:
+        if len(id_str) != 13 or not id_str.isdigit():
+            continue
+        if not luhn_verify(id_str):
+            continue
+        mm, dd = int(id_str[2:4]), int(id_str[4:6])
+        if mm < 1 or mm > 12:
+            continue
+        try:
+            _, max_day = calendar.monthrange(2000, mm)
+            if dd < 1 or dd > max_day:
+                continue
+        except ValueError:
+            continue
+        valid.append(id_str)
+    return valid
+
+
+def build_work_units(start_year, end_year):
+    """Return list of (year, month) tuples covering the requested range."""
+    return [
+        (year, month)
+        for year in range(start_year, end_year + 1)
+        for month in range(1, 13)
+    ]
+
+
+def estimate_count(start_year, end_year):
+    """Estimate total ID count for the given range."""
+    total = 0
+    for year in range(start_year, end_year + 1):
+        for month in range(1, 13):
+            _, days = calendar.monthrange(year, month)
+            total += days * 10000 * 2
+    return total
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Generate valid South African ID numbers"
+    )
+    parser.add_argument(
+        "-s", "--start-year", type=int, default=1900,
+        help="start year (default: 1900)",
+    )
+    parser.add_argument(
+        "-e", "--end-year", type=int, default=None,
+        help="end year (default: current year)",
+    )
+    parser.add_argument(
+        "-o", "--output", default="valid_ids.txt",
+        help="output file path (default: valid_ids.txt)",
+    )
+    parser.add_argument(
+        "-w", "--workers", type=int, default=None,
+        help="parallel worker count (default: CPU count)",
+    )
+    parser.add_argument(
+        "--validate", action="store_true",
+        help="verify each ID with Luhn checksum and date validation",
+    )
+    parser.add_argument(
+        "-n", "--limit", type=int, default=None,
+        help="stop after generating N IDs",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="estimate output size without generating",
+    )
+    args = parser.parse_args()
+
+    if args.end_year is None:
+        from datetime import date
+        args.end_year = date.today().year
+
+    if args.start_year < 0 or args.end_year < 0:
+        sys.exit("Error: years must be non-negative")
+    if args.start_year > args.end_year:
+        sys.exit("Error: start year must be <= end year")
+
+    work_units = build_work_units(args.start_year, args.end_year)
+    total_months = len(work_units)
+    est_ids = estimate_count(args.start_year, args.end_year)
+    est_size_gb = est_ids * 14 / (1024 ** 3)
+
+    if args.dry_run:
+        print(f"Range: {args.start_year}-{args.end_year} ({total_months} months)")
+        print(f"Estimated IDs: {est_ids:,}")
+        print(f"Estimated file size: {est_size_gb:.1f} GB")
         return
 
-    buffer_size = 100000  # Adjust based on memory availability
-    buffer = []
+    workers = args.workers or mp.cpu_count()
+    out_dir = os.path.dirname(args.output)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
 
-    try:
-        with open(file_name, "w") as file:
-            for full_year in range(start_year, end_year + 1):
-                yy = f"{full_year % 100:02d}"
-                for month in range(1, 13):
-                    if month == 2:
-                        days_in_month = 29 if is_leap_year(full_year) else 28
-                    elif month in [4, 6, 9, 11]:
-                        days_in_month = 30
-                    else:
-                        days_in_month = 31
+    limit_str = f", limit {args.limit:,}" if args.limit else ""
+    print(f"Generating SA IDs: {args.start_year}-{args.end_year} ({est_ids:,} estimated{limit_str})")
+    print(f"Workers: {workers} | Output: {args.output}")
+    if args.validate:
+        print("Validation enabled")
 
-                    for day in range(1, days_in_month + 1):
-                        mm = f"{month:02d}"
-                        dd = f"{day:02d}"
+    start_time = time.time()
+    total_ids = 0
+    done = False
 
-                        for gender in range(0, 10000):
-                            ssss = f"{gender:04d}"
+    with open(args.output, "w") as fh, mp.Pool(processes=workers) as pool:
+        for i, batch in enumerate(
+            pool.imap(generate_ids_for_month, work_units), 1
+        ):
+            if args.validate:
+                batch = validate_batch(batch)
+            if args.limit and total_ids + len(batch) >= args.limit:
+                batch = batch[: args.limit - total_ids]
+                done = True
+            fh.write("\n".join(batch))
+            fh.write("\n")
+            total_ids += len(batch)
+            elapsed = time.time() - start_time
+            pct = i / total_months * 100
+            rate = total_ids / elapsed if elapsed > 0 else 0
+            print(
+                f"\r[{pct:5.1f}%] {i}/{total_months} months | "
+                f"{total_ids:,} IDs | {rate:,.0f} IDs/s",
+                end="",
+                flush=True,
+            )
+            if done:
+                break
 
-                            for citizenship in range(0, 2):
-                                # Construct ID without checksum (12 digits: YYMMDDSSSSC8)
-                                id_number_without_checksum = f"{yy}{mm}{dd}{ssss}{citizenship}8"
-                                checksum = calculate_luhn_left_to_right(id_number_without_checksum)
-                                valid_id = f"{id_number_without_checksum}{checksum}"
+    elapsed = time.time() - start_time
+    print(f"\nDone: {total_ids:,} IDs written to {args.output} in {elapsed:.1f}s")
 
-                                try:
-                                    sa_id = SouthAfricanIdentityNumber(valid_id)
-                                    if sa_id.is_valid():
-                                        buffer.append(valid_id)
-                                except InvalidIdentityNumberException:
-                                    continue
 
-                                if len(buffer) >= buffer_size:
-                                    file.write("\n".join(buffer) + "\n")
-                                    buffer.clear()
-
-            if buffer:
-                file.write("\n".join(buffer) + "\n")
-
-        print(f"ID generation complete. Successfully validated IDs saved to {file_name}")
-    except Exception as e:
-        print(f"Error writing to file: {e}")
-
-# Example usage to generate all IDs from 1900 to 2023
-generate_all_valid_ids(1900, 2023)
+if __name__ == "__main__":
+    main()
