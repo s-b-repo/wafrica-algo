@@ -176,14 +176,59 @@ Live progress reporting shows percentage, count, and throughput in real-time:
 
 ---
 
-## What Could You Do With This?
+## The Real-World Impact: Why This Matters
 
-This tool generates test data. Some applications:
+South African ID numbers aren't just numbers on a card. They are the **single key** to a person's entire digital life in the country. Banks, mobile carriers, healthcare providers, SASSA grants, voter registration, credit bureaus — they all authenticate using the 13-digit ID number. In many cases, **the ID number alone** is enough to pass identity verification.
 
-- **Software testing**: If you're building a system that accepts SA ID numbers, you need valid test data that covers edge cases — leap years, boundary dates, both citizenship values
+That's a problem.
+
+### The Scale of Exposure
+
+This tool demonstrates that generating every valid SA ID number is computationally trivial. A commodity laptop with 4 cores can produce **the entire keyspace** — every valid ID number from 1900 to 2026 — in under an hour. That's approximately **927 million valid numbers**.
+
+For a targeted attack, the scope narrows dramatically. If an attacker knows a person's approximate age (say, born between 1990 and 1995), their gender, and that they're an SA citizen, the search space collapses to roughly **36 million possibilities**. With the generator producing over 2 million IDs per second, that's an **18-second exhaustive search**.
+
+### What an Attacker Can Do With Valid IDs
+
+- **Account enumeration**: Many South African services use the ID number as a username or lookup key. Valid IDs let an attacker enumerate which numbers are registered on a platform without triggering invalid-format errors.
+- **Identity fraud**: Systems that verify identity by asking for the ID number — without additional authentication factors — are trivially bypassable. This includes some government portals, insurance lookups, and credit checks.
+- **SIM swap preparation**: Mobile carriers that use ID numbers as part of their verification process are vulnerable. A valid ID number is the first step in a SIM swap attack, which can then be used to intercept OTPs and drain bank accounts.
+- **SASSA and grant fraud**: South Africa's social grant system has been repeatedly targeted by fraudsters using stolen or generated ID numbers to register for grants.
+- **Credential stuffing**: Combine generated ID numbers with common passwords or leaked password databases, and you have a credential stuffing attack tailored to the South African market.
+
+### The Systemic Problem
+
+The fundamental issue is that SA ID numbers were designed in an era when knowing someone's number implied you had physical access to their identity document. They were **identifiers**, not **authenticators**. But decades of digital systems have treated them as both.
+
+A 13-digit number with a deterministic checksum provides **zero secrecy**. The Luhn check digit adds exactly **one digit of validation** — it catches typos, not attackers. The entire format is predictable: if you know someone's birthday and gender, you've already eliminated 99.7% of the keyspace.
+
+Compare this to a randomly generated UUID (128 bits of entropy) or even a basic API key. The SA ID number has roughly **30 bits of effective entropy** for a known birth year — less than a 9-character random password.
+
+### What Should Change
+
+1. **Stop using ID numbers as authenticators.** They should be treated as public identifiers — like an email address — not as proof of identity.
+2. **Mandatory multi-factor authentication.** Any system that currently accepts "ID number + name" as sufficient verification is broken. Add biometrics, OTPs, or hardware tokens.
+3. **Rate limiting and monitoring.** Services should detect and block sequential or bulk ID number lookups. If someone is querying thousands of ID numbers per minute, that's not a customer.
+4. **Tokenisation.** Instead of passing raw ID numbers between systems, use tokenised references that are meaningless outside their original context.
+5. **National digital identity reform.** South Africa needs a modern digital identity framework that doesn't rely on a 1960s-era numbering scheme as the backbone of authentication.
+
+### Responsible Disclosure
+
+This tool is published for **security research and awareness**. The vulnerability isn't in the tool — it's in the systems that treat a predictable, deterministic number as a secret. Every valid ID number this tool generates could also be computed by hand with enough patience. The generator just makes the scale of the problem impossible to ignore.
+
+The goal is to push organisations — banks, telecoms, government agencies — to stop relying on ID numbers as a security boundary. Until they do, every South African's digital identity is protected by nothing more than a 1950s checksum algorithm and the assumption that attackers can't count to 10,000.
+
+---
+
+## Use Cases
+
+Beyond the security implications, the tool has legitimate applications:
+
+- **Software testing**: Generate valid test data covering edge cases — leap years, boundary dates, both citizenship values, all gender ranges
 - **Data validation**: Verify that your ID validation logic correctly accepts valid numbers and rejects invalid ones
+- **Penetration testing**: Authorised security assessments of systems that use ID numbers for authentication
 - **Statistical analysis**: Study the distribution of check digits, gender sequences, or date patterns
-- **Security research**: Understand the entropy and predictability of ID number schemes
+- **Academic research**: Analyse the entropy and predictability of national ID schemes
 
 ---
 
