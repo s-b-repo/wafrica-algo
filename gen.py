@@ -46,16 +46,22 @@ def generate_ids_for_month(args):
 
 
 def validate_batch(ids):
-    """Filter a batch through the za-id-number library."""
-    from za_id_number import SouthAfricanIdentityNumber
-    from za_id_number.exceptions import InvalidIdentityNumberException
+    """Filter a batch through the za-id-number library and Luhn check."""
+    from za_id_number.za_id_number import SouthAfricanIdentityNumber
 
     valid = []
     for id_str in ids:
         try:
-            if SouthAfricanIdentityNumber(id_str).is_valid():
-                valid.append(id_str)
-        except InvalidIdentityNumberException:
+            sa = SouthAfricanIdentityNumber(id_str)
+            if not sa.identity_length():
+                continue
+            if sa.birthdate is None:
+                continue
+            expected = luhn_check_digit(id_str[:12])
+            if int(id_str[12]) != expected:
+                continue
+            valid.append(id_str)
+        except Exception:
             continue
     return valid
 
@@ -104,6 +110,10 @@ def main():
         help="cross-check each ID with the za-id-number library (much slower)",
     )
     parser.add_argument(
+        "-n", "--limit", type=int, default=None,
+        help="stop after generating N IDs",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="estimate output size without generating",
     )
@@ -134,13 +144,15 @@ def main():
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
-    print(f"Generating SA IDs: {args.start_year}-{args.end_year} ({est_ids:,} estimated)")
-    print(f"Workers: {workers} | Output: {args.output} (~{est_size_gb:.1f} GB)")
+    limit_str = f", limit {args.limit:,}" if args.limit else ""
+    print(f"Generating SA IDs: {args.start_year}-{args.end_year} ({est_ids:,} estimated{limit_str})")
+    print(f"Workers: {workers} | Output: {args.output}")
     if args.validate:
         print("Library validation enabled (slower)")
 
     start_time = time.time()
     total_ids = 0
+    done = False
 
     with open(args.output, "w") as fh, mp.Pool(processes=workers) as pool:
         for i, batch in enumerate(
@@ -148,6 +160,9 @@ def main():
         ):
             if args.validate:
                 batch = validate_batch(batch)
+            if args.limit and total_ids + len(batch) >= args.limit:
+                batch = batch[: args.limit - total_ids]
+                done = True
             fh.write("\n".join(batch))
             fh.write("\n")
             total_ids += len(batch)
@@ -160,6 +175,8 @@ def main():
                 end="",
                 flush=True,
             )
+            if done:
+                break
 
     elapsed = time.time() - start_time
     print(f"\nDone: {total_ids:,} IDs written to {args.output} in {elapsed:.1f}s")
