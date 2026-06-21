@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """South African ID number generator.
 
-Generates valid SA ID numbers for specified date ranges using the Luhn
-algorithm as implemented by the Department of Home Affairs (left-to-right).
+Generates valid SA ID numbers for specified date ranges using the
+standard Luhn algorithm for check digit computation.
 """
 
 import argparse
@@ -14,11 +14,11 @@ import time
 
 
 def luhn_check_digit(payload):
-    """Compute SA ID Luhn check digit for a 12-digit payload (left-to-right)."""
+    """Compute Luhn check digit for a 12-digit SA ID payload."""
     total = 0
     for i, ch in enumerate(payload):
         d = int(ch)
-        if i % 2 == 0:
+        if i % 2 == 1:
             d *= 2
             if d > 9:
                 d -= 9
@@ -45,24 +45,37 @@ def generate_ids_for_month(args):
     return ids
 
 
-def validate_batch(ids):
-    """Filter a batch through the za-id-number library and Luhn check."""
-    from za_id_number.za_id_number import SouthAfricanIdentityNumber
+def luhn_verify(id_str):
+    """Verify a 13-digit ID passes the Luhn checksum."""
+    total = 0
+    for i, ch in enumerate(reversed(id_str)):
+        d = int(ch)
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
 
+
+def validate_batch(ids):
+    """Filter a batch using inline Luhn + date validation (no external lib)."""
     valid = []
     for id_str in ids:
-        try:
-            sa = SouthAfricanIdentityNumber(id_str)
-            if not sa.identity_length():
-                continue
-            if sa.birthdate is None:
-                continue
-            expected = luhn_check_digit(id_str[:12])
-            if int(id_str[12]) != expected:
-                continue
-            valid.append(id_str)
-        except Exception:
+        if len(id_str) != 13 or not id_str.isdigit():
             continue
+        if not luhn_verify(id_str):
+            continue
+        mm, dd = int(id_str[2:4]), int(id_str[4:6])
+        if mm < 1 or mm > 12:
+            continue
+        try:
+            _, max_day = calendar.monthrange(2000, mm)
+            if dd < 1 or dd > max_day:
+                continue
+        except ValueError:
+            continue
+        valid.append(id_str)
     return valid
 
 
@@ -107,7 +120,7 @@ def main():
     )
     parser.add_argument(
         "--validate", action="store_true",
-        help="cross-check each ID with the za-id-number library (much slower)",
+        help="verify each ID with Luhn checksum and date validation",
     )
     parser.add_argument(
         "-n", "--limit", type=int, default=None,
@@ -148,7 +161,7 @@ def main():
     print(f"Generating SA IDs: {args.start_year}-{args.end_year} ({est_ids:,} estimated{limit_str})")
     print(f"Workers: {workers} | Output: {args.output}")
     if args.validate:
-        print("Library validation enabled (slower)")
+        print("Validation enabled")
 
     start_time = time.time()
     total_ids = 0
