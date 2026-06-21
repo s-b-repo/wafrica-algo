@@ -1,87 +1,86 @@
-#credit
-###
-https://pypi.org/project/za-id-number/
-###
-https://medium.com/@ryanneilparker/sa-id-fumble-how-south-africa-managed-to-incorrectly-apply-the-luhn-algorithm-352dd6f10738
-# South African ID Number Generator and Validator
+# South African ID Number Generator
 
-This project generates valid South African ID numbers based on certain criteria, and validates them using the [za-id-number](https://pypi.org/project/za-id-number/) Python library before saving the results to a file.
+Generates valid South African ID numbers based on date ranges, validated using the [Luhn algorithm as applied by Home Affairs](https://medium.com/@ryanneilparker/sa-id-fumble-how-south-africa-managed-to-incorrectly-apply-the-luhn-algorithm-352dd6f10738). Optionally cross-checks results with the [za-id-number](https://pypi.org/project/za-id-number/) library.
 
 ## Features
 
-- Generates South African ID numbers from specified date ranges (default: 1900 to 2023).
-- Ensures valid date combinations (handles leap years, month-day limits).
-- Supports gender differentiation in ID numbers.
-- Citizenship indicator (South African or Permanent Resident).
-- Calculates the Luhn checksum to validate each ID number.
-- Uses the `za-id-number` library to validate each ID number before saving.
-- Saves only the successfully validated IDs to a text file.
+- Generates SA ID numbers for configurable date ranges (default: 1900 to current year)
+- Multiprocessing for fast parallel generation across CPU cores
+- Live progress reporting (percentage, count, throughput)
+- Handles leap years and month-day limits correctly
+- Covers all gender sequences (0000-9999) and citizenship values (0-1)
+- Optional library-based validation via `--validate`
+- Dry-run mode to estimate output size before generating
 
 ## Requirements
 
-- Python 3.x
-- `za-id-number` library
-
-### Install the required dependencies:
+- Python 3.7+
+- `za-id-number` (only required when using `--validate`)
 
 ```bash
 pip install za-id-number
+```
+
+## Usage
+
+```bash
+# Generate all IDs from 1900 to current year (default)
+python gen.py
+
+# Custom range with output file
+python gen.py -s 1980 -e 2000 -o sa_ids_1980_2000.txt
+
+# Use 8 workers
+python gen.py -w 8
+
+# Estimate output size without generating
+python gen.py --dry-run
+
+# Cross-check with za-id-number library (much slower)
+python gen.py --validate
+```
+
+### CLI Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-s`, `--start-year` | Start year | 1900 |
+| `-e`, `--end-year` | End year | Current year |
+| `-o`, `--output` | Output file path | `valid_ids.txt` |
+| `-w`, `--workers` | Parallel worker count | CPU count |
+| `--validate` | Cross-check each ID with za-id-number | Off |
+| `--dry-run` | Estimate output size only | Off |
+
+## How It Works
+
+SA ID format: `YYMMDDSSSSCAZ`
+
+| Segment | Meaning |
+|---------|---------|
+| `YY` | Year of birth |
+| `MM` | Month of birth |
+| `DD` | Day of birth |
+| `SSSS` | Sequence/gender (0000-4999 female, 5000-9999 male) |
+| `C` | Citizenship (0 = SA citizen, 1 = permanent resident) |
+| `A` | Former race digit (now fixed at 8) |
+| `Z` | Luhn check digit |
+
+The generator constructs all valid date/sequence/citizenship combinations, computes the Luhn check digit for each, and writes the results to file. The Luhn algorithm uses the left-to-right variant that SA Home Affairs implemented.
+
+## Notes
+
+- Full generation (1900-2026) produces ~900 million IDs (~12 GB).
+- The `--validate` flag is useful for verifying the Luhn implementation matches the library but is orders of magnitude slower.
+- Memory usage scales per-month (~8 MB per worker).
 
 ## Contributing
 
-We welcome contributions to improve this project! To contribute:
-1. Fork the repository.
-2. Create a new feature branch (`git checkout -b feature/your-feature`).
-3. Commit your changes (`git commit -m 'Add some feature'`).
-4. Push to the branch (`git push origin feature/your-feature`).
-5. Open a pull request.
-
-Usage
-
-To generate valid South African ID numbers and save them to a file:
-
-python
-
-from id_generator import generate_all_valid_ids
-
-# Example: Generate all valid IDs from 1900 to 2023 and save to 'valid_ids.txt'
-generate_all_valid_ids(1900, 2023, file_name="valid_ids.txt")
-
-Parameters:
-
-    start_year (int): The starting year for generating IDs (default is 1900).
-    end_year (int): The ending year for generating IDs (default is 2023).
-    file_name (str): The file where the validated IDs will be saved (default is valid_ids.txt).
-
-Example:
-
-
-generate_all_valid_ids(1900, 2023, file_name="valid_sa_ids.txt")
-
-This will generate and validate South African ID numbers from 1900 to 2023 and save them to the specified file.
-How It Works
-
-    ID Generation: The program generates all possible ID numbers for given years, months, days, and gender combinations. Each ID has a checksum calculated using the Luhn algorithm.
-    Validation: After generating an ID number, it is validated using the za-id-number library.
-    Saving: Only IDs that pass the validation are saved to the output file.
-
-Notes
-
-    The ID generation process is optimized with buffering to reduce frequent disk writes.
-    The default buffer size is set to 100,000 IDs, but you can adjust this based on memory availability.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Commit your changes (`git commit -m 'Add some feature'`)
+4. Push to the branch (`git push origin feature/your-feature`)
+5. Open a pull request
 
 ## License
 
-This project is licensed under the GPL License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## Future Work
-
-- Add command-line parameters to customize the date range and output file without modifying the script.
-- Optimize the performance for larger date ranges.
-- Add unit tests for the Luhn algorithm and ID generation.
-
----
-
-Feel free to modify the wording, formatting, or any details to match your specific repository and goals. Let me know if you'd like any further adjustments!
+GPL - see [LICENSE](LICENSE).
