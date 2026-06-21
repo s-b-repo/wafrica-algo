@@ -86,9 +86,54 @@ That means I can find your ID number in 18 seconds.
 
 Not hours. Not days. Eighteen seconds on a laptop.
 
-Once someone has a valid ID number, the doors that open are alarming. They can probe login pages and registration forms across services to see which ID numbers are active accounts, without ever triggering an invalid format error. They can walk through identity verification checks on government portals, insurance sites, and credit bureaus that treat a correct ID number as proof of identity. They can call your mobile carrier, recite the ID number, pass verification, and initiate a SIM swap, which gives them your one-time passwords, which gives them your bank account. They can register for government grants in your name, which is not a hypothetical because SASSA fraud has been front page news in South Africa for years and keeps getting more sophisticated. They can combine databases of valid ID numbers with common passwords for credential stuffing attacks tailored specifically to the South African market.
+Once someone has a valid ID number, the doors that open are alarming. Let me walk through two of the most damaging scenarios in detail, because I think people underestimate how straightforward these attacks actually are.
 
-And the thing is, none of this requires hacking anything. The tool I built doesn't exploit a vulnerability in any system. It just does maths. The same maths a university student could do with a calculator and enough patience. All I did was make it fast enough that the scale of the problem becomes impossible to pretend doesn't exist.
+
+How a SIM swap works with just an ID number
+
+This is the one that drains bank accounts, and it happens in South Africa every single day.
+
+It starts with a phone call. The attacker calls your mobile carrier, Vodacom, MTN, Cell C, whoever you're with. They say they've lost their phone and need a replacement SIM. The consultant on the other end asks them to verify their identity. In many cases, the verification is your full name and your ID number. Sometimes they ask for your address or the last recharge amount, but the ID number is the anchor of the whole process.
+
+The attacker provides the generated ID number. It's valid. It passes the format check on the consultant's screen. Combined with a name, which is trivially available from social media, LinkedIn, or even just a data breach, the consultant has no reason to doubt them.
+
+A new SIM gets activated on your number. Your phone goes dead. You might not notice for a few hours, especially if it happens at night.
+
+Now the attacker has your phone number. Every OTP, every two-factor authentication SMS, every bank notification, all of it goes to them. They log into your banking app. They reset the password using SMS verification. They transfer money out. By the time you wake up and realize your phone has no signal, your account has been cleaned out.
+
+The entire chain of events, from generated ID number to emptied bank account, relies on one broken assumption at the very first step: that knowing an ID number proves you are that person. It doesn't. It never did. But the carrier's verification process treats it like it does.
+
+Some carriers have added additional checks in recent years, like requiring you to visit a store with your physical ID document. But phone-based SIM swaps still happen constantly. The Banking Risk Information Centre reported that SIM swap fraud in South Africa increased by over 400 percent in recent years, with losses running into hundreds of millions of rands annually.
+
+The fix is not complicated. Carriers should require in-person verification with biometrics for any SIM change. Banks should stop relying on SMS-based OTPs as the primary second factor and move to app-based authentication or hardware tokens. And critically, no step in this chain should treat an ID number as a secret, because as this tool demonstrates, it is not one.
+
+
+How SASSA grant fraud works with generated ID numbers
+
+The South African Social Security Agency administers grants to millions of vulnerable people. Old age pensions, disability grants, child support grants, the R350 Social Relief of Distress grant. These are lifelines for people who have nothing else.
+
+The system was designed to be accessible, which is the right instinct. You shouldn't need a law degree to apply for a grant that feeds your children. But accessible and unprotected are different things, and the grant system has struggled to tell them apart.
+
+Here is how it has been exploited.
+
+The attacker generates a batch of valid ID numbers using a tool like this one. They don't need specific targets. They just need ID numbers that belong to real people who are eligible for grants but haven't applied yet, or in some cases, ID numbers that belong to people who have already died but haven't been removed from the population register.
+
+They submit applications through the SASSA channels, online, via USSD, or through intermediaries who process applications in bulk in rural areas. The ID number is the primary identifier in the application. If it's valid and it matches a record in the Department of Home Affairs database, the application moves forward.
+
+For the SRD grant specifically, the R350 one, verification has historically been minimal. The system checks the ID number against the Home Affairs database to confirm the person exists, checks whether they're already receiving another grant or have employment income through UIF records, and if those checks pass, the grant gets approved. For much of the system's history, there was no biometric verification at the application stage.
+
+The money gets paid out to a bank account or a post office cash collection point. The attacker either provides their own banking details, or they use a network of mules to collect cash payments. In some cases, corrupt insiders at SASSA offices or the Post Office have facilitated bulk fraudulent applications.
+
+The scale of this problem is not theoretical. In 2022, SASSA itself admitted that millions of fraudulent SRD grant applications had been detected. News reports have documented cases of single individuals linked to hundreds of fraudulent grant applications. The Special Investigating Unit has been running ongoing investigations into SASSA fraud for years, with criminal cases involving billions of rands.
+
+The people who suffer most are the actual beneficiaries. When the fraud budget balloons, the system tightens restrictions, adds delays, and makes the application process harder for everyone. Legitimate applicants get declined because the system flagged something. Payments get delayed while investigations run. The people who need R350 to eat this week get caught in a dragnet designed to catch criminals who gamed the system with nothing more than a list of valid numbers.
+
+What should change is straightforward but requires political will. Biometric verification at the point of application, not just at collection. Cross-referencing applications against death records in real time, not in batch jobs that run weeks behind. Linking grant payments to verified bank accounts that have themselves been opened with in-person identity verification. And fundamentally, stopping the practice of treating a valid ID number as sufficient proof that the person standing in front of you, or more often the person on the other end of a USSD session, is who they claim to be.
+
+
+These two scenarios, SIM swaps and grant fraud, are not edge cases. They are not theoretical risks discussed in academic papers that nobody reads. They are happening right now, at industrial scale, across South Africa. And both of them start the same way: with a valid 13-digit number that the system was never designed to treat as a secret but does anyway.
+
+None of this requires hacking anything. The tool I built doesn't exploit a vulnerability in any system. It just does arithmetic. The same arithmetic a university student could do with a calculator and a free afternoon. All I did was make it fast enough that the scale of the problem becomes impossible to pretend doesn't exist.
 
 The real vulnerability here is not my generator. The real vulnerability is that sixty million people's access to banking, healthcare, telecommunications, and government services is gated by a number with roughly 30 bits of entropy. For some context, that's less randomness than a 9-character password. And unlike a password, you can never change it. It's yours for life.
 
