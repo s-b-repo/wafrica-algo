@@ -1,265 +1,154 @@
-# How I Built a High-Performance South African ID Number Generator in Python
+I Generated 900 Million Valid South African ID Numbers to Prove a Point
 
-## Reverse-Engineering the Luhn Algorithm Behind 60 Million Identities
+Your ID number was never a secret. Here's why that should worry you.
 
----
 
-Every South African citizen carries a 13-digit identity number. It encodes your date of birth, your gender, your citizenship status, and a mathematical checksum that validates the entire sequence. That checksum uses the Luhn algorithm — the same formula that validates your credit card number every time you shop online.
+I've always been the kind of person who needs to know how things work. Not just the surface level stuff, but the actual mechanics underneath. So when I started looking into how South African ID numbers are structured, I went down a rabbit hole that ended with me generating every single valid ID number that could ever exist. All 900 million of them. On a regular laptop. In under an hour.
 
-I wanted to understand how it works. So I built a tool that generates every valid South African ID number ever possible — all 900 million of them.
+What started as curiosity turned into something that genuinely concerned me.
 
-Here's what I learned, what went wrong, and how I made it fast.
 
----
+What's actually in your ID number
 
-## What's Inside a South African ID Number?
+Most people just memorize their ID number and never think twice about what it contains. But every digit means something.
 
-Let's break down the 13 digits: `YYMMDDSSSSCAZ`
+Take any 13-digit SA ID number. The first six digits are your date of birth, year month day. The next four digits are a sequence number that also tells someone your gender, with 0000 through 4999 being female and 5000 through 9999 being male. Digit eleven is your citizenship status, zero for South African citizens and one for permanent residents. Digit twelve used to represent race back before 1980, but now it's just permanently set to 8. And that last digit, number thirteen, is a check digit calculated using something called the Luhn algorithm.
 
-| Position | Digits | Meaning |
-|----------|--------|---------|
-| 1-2 | `YY` | Year of birth (last two digits) |
-| 3-4 | `MM` | Month of birth |
-| 5-6 | `DD` | Day of birth |
-| 7-10 | `SSSS` | Gender sequence — 0000-4999 for female, 5000-9999 for male |
-| 11 | `C` | Citizenship — 0 = SA citizen, 1 = permanent resident |
-| 12 | `A` | Previously used for race classification (now fixed at 8) |
-| 13 | `Z` | Luhn check digit |
+So think about that for a second. If I know your birthday and your gender, I already know 10 out of 13 digits. The 11th is almost certainly 0. The 12th is always 8. The 13th is just maths based on the other 12.
 
-That last digit is where the maths lives. It's calculated using the **Luhn algorithm**, a checksum formula invented by IBM scientist Hans Peter Luhn in 1954. If you change even a single digit in the ID number, the check digit breaks and the number fails validation.
+That's not a secure identifier. That's basically a trivia question about you.
 
----
 
-## The Luhn Algorithm: A Quick Primer
+The Luhn algorithm and why it doesn't protect you
 
-The Luhn algorithm is deceptively simple:
+The Luhn algorithm was invented in 1954 by an IBM scientist named Hans Peter Luhn. It was designed to catch typos and accidental errors when people wrote down numbers by hand. It was never, ever intended to be a security mechanism.
 
-1. Starting from the **rightmost digit**, move left
-2. **Double every second digit**
-3. If doubling produces a number greater than 9, subtract 9
-4. Sum all the digits
-5. If the total is divisible by 10, the number is valid
+The way it works is pretty straightforward. You take the first 12 digits of the ID. Starting from the right side, you double every second digit. If doubling gives you something over 9, you subtract 9. Then you add everything up. Whatever number you need to tack on to make the total divisible by 10, that's your check digit.
 
-For generating an ID, you compute digits 1-12 and then calculate what digit 13 must be to make the total divisible by 10. That's your check digit.
+It's the same formula that validates your credit card number. Ten lines of Python code. Completely deterministic. Give me the first 12 digits and I can tell you the 13th one every single time without fail.
 
-Here's the Python implementation:
+There's no encryption involved. No randomness. No secret sauce. Just basic arithmetic that a calculator could handle.
 
-```python
-def luhn_check_digit(payload):
-    total = 0
-    for i, ch in enumerate(payload):
-        d = int(ch)
-        if i % 2 == 1:
-            d *= 2
-            if d > 9:
-                d -= 9
-        total += d
-    return (10 - total % 10) % 10
-```
+There's also an interesting footnote here. Apparently, according to research by Ryan Neil Parker, the Department of Home Affairs implemented this algorithm backwards, processing digits from left to right instead of the standard right to left. Nobody can say for certain whether that was intentional, a workaround, or just a mistake from decades ago. The internet calls it the SA ID Fumble. The fact that nobody really knows tells you something about how much serious scrutiny this system has received over the years.
 
-Twelve digits go in. One check digit comes out. Deterministic, fast, and elegant.
 
----
+Building the generator and the bug that almost ruined everything
 
-## The SA Luhn Fumble
+My first attempt at building this was painfully slow. One loop in Python, checking every possible combination one by one. 126 years of dates, roughly 365 days per year, 10,000 sequence numbers per day, 2 citizenship options. That works out to around 920 million combinations. With the za-id-number Python library validating each one individually, creating a whole object for every single ID, parsing dates, computing gender, I was looking at literal days of runtime.
 
-Here's where it gets interesting. According to research by Ryan Neil Parker, South Africa's Department of Home Affairs implemented the Luhn algorithm **differently** from the global standard. While most systems (credit cards, IMEI numbers) process digits from right to left, the SA implementation reportedly processes left to right.
+So I reworked it. Two changes made all the difference.
 
-This has been called the "SA ID Fumble" — whether it was a deliberate choice, a technical workaround, or simply a mistake remains unclear. What matters for practical purposes is that the standard Luhn implementation produces ID numbers that pass real-world validation. I confirmed this by testing generated IDs against multiple online SA ID validators.
+First, I split the work across multiple CPU cores. January 1985 has nothing to do with February 1985, so there's no reason they can't be computed at the same time. I broke everything into 1,524 monthly chunks and spread them across every core on the machine.
 
----
+Second, I got rid of the external library entirely. We're already generating valid dates and computing correct check digits ourselves. Every ID we produce is valid by construction. Paying for a full Python object instantiation for each of 900 million IDs is like hiring an accountant to confirm that 2 plus 2 equals 4.
 
-## From Single-Threaded to Multicore
+I replaced all of it with a tiny inline Luhn verifier. No objects, no date parsing, just the raw calculation. 7 times faster.
 
-My first version was painfully slow. A single Python loop iterating through every possible combination:
+The end result was pretty dramatic. A full year's worth of IDs, 7.3 million numbers, generates in about 3 seconds on a 12-core machine. The whole dataset from 1900 to 2026, all 927 million IDs, takes under an hour.
 
-- 126 years (1900-2026)
-- 365 days per year (approximately)
-- 10,000 gender sequences per day
-- 2 citizenship values
+But here's where things almost went sideways. I nearly shipped the entire tool with every single output being wrong.
 
-That's roughly **920 million combinations**. On a single core, with the `za-id-number` library validating each one, it would take **days**.
+My Luhn implementation was doubling the wrong digit positions. Even indices instead of odd. In the code, the difference is literally one character. One equals sign pointing at the wrong number. Every ID the tool spit out had the right format, 13 digits, valid dates, proper structure, but they all had incorrect check digits. They looked perfect to the naked eye and they passed all my own format checks.
 
-### The Fix: Multiprocessing + Ditch the Library
+I only caught it because I copy-pasted one of the generated IDs into an online validator and saw the word Invalid staring back at me.
 
-Two changes made it practical:
+One character. That was the margin between a working tool and a tool that produces 900 million pieces of convincing garbage. If I had only tested against my own code, I never would have caught it.
 
-**1. Parallelise by month.** Each year-month pair is independent — January 1985 doesn't depend on February 1985. I split the work into 1,524 month-chunks and distributed them across CPU cores using Python's `multiprocessing.Pool`:
+That experience burned a lesson into my brain. Never validate your output using only the logic that produced it. Always check against something external.
 
-```python
-with open(args.output, "w") as fh, mp.Pool(processes=workers) as pool:
-    for i, batch in enumerate(pool.imap(generate_ids_for_month, work_units), 1):
-        fh.write("\n".join(batch))
-        fh.write("\n")
-```
 
-**2. Remove the external library.** The `za-id-number` library instantiates a Python object for every single ID — parsing dates, computing gender, resolving citizenship. That's useful for analysis, but massive overkill for generation. Since we already construct valid dates and compute correct Luhn check digits, every generated ID is valid by construction.
+Making it something people can actually use
 
-For optional verification, I wrote a lightweight inline validator:
+The original script was the kind of thing you write at 2 in the morning. Everything hardcoded. Want to change the year range? Edit the source code. Want just 200 IDs instead of 900 million? Too bad, edit the source code. No progress indicator while it runs, so you just sit there wondering if it crashed.
 
-```python
-def luhn_verify(id_str):
-    total = 0
-    for i, ch in enumerate(reversed(id_str)):
-        d = int(ch)
-        if i % 2 == 1:
-            d *= 2
-            if d > 9:
-                d -= 9
-        total += d
-    return total % 10 == 0
-```
+I added a proper command line interface. Now you can specify the year range, the output file, how many workers to use, how many IDs you want, and whether to run validation. There's a dry run flag that tells you the estimated output size before you commit to anything, which matters when the full output is 12 gigabytes.
 
-No object instantiation. No date parsing. Just maths. **7x faster** than the library approach.
+During generation you get a live progress line showing the percentage done, total count, and how fast it's going. Watching it tick along at 2 million IDs per second is honestly pretty satisfying.
 
-### The Results
 
-| Metric | Before | After |
-|--------|--------|-------|
-| Cores used | 1 | All available |
-| Validation | External library (~70K IDs/s) | Inline Luhn (~486K IDs/s) |
-| Throughput | ~9 IDs/s with validation | ~2.3M IDs/s generation |
-| Time for 1 year | Hours | ~3 seconds |
-| Dependencies | `za-id-number` | None (stdlib only) |
+Now here's the part that should make you uncomfortable
 
-On a 12-core machine, generating a full year of IDs (7.3 million numbers) takes about 3 seconds.
+Everything up to this point was a fun engineering problem. Algorithm implementation, performance optimization, CLI design. Interesting stuff for a developer.
 
----
+But the implications of what this tool demonstrates are genuinely unsettling, and I think they need to be talked about a lot more than they are.
 
-## The Bug That Made Everything Invalid
+Your ID number is not just some random number on a card. In South Africa, it is the master key to your entire life. Want to open a bank account? ID number. Get a cell phone contract? ID number. File taxes? ID number. Apply for a SASSA grant? ID number. Register to vote? ID number. Run a credit check? ID number.
 
-During development, I hit a critical bug. My initial Luhn implementation doubled the **wrong positions** — even indices instead of odd indices in the payload. The difference is subtle:
+And in a disturbing number of these systems, the ID number by itself is enough to get through the door. No second factor. No fingerprint. No one-time pin. Just thirteen digits and the system treats you like you're who you claim to be, or at least lets you look around enough to do damage.
 
-```python
-# WRONG (left-to-right doubling)
-if i % 2 == 0:
-    d *= 2
+Let me put some numbers on this to make the scale clear.
 
-# CORRECT (standard Luhn)
-if i % 2 == 1:
-    d *= 2
-```
+Say I want to find your specific ID number. I know you're a woman born sometime between 1990 and 1995. You're a South African citizen. That's the kind of information anyone could pick up from a LinkedIn profile, a Facebook page, or a five-minute conversation.
 
-This produced IDs that looked valid at a glance — 13 digits, valid dates, proper structure — but failed every real-world validator. The check digit was consistently wrong.
+With those constraints, the search space drops to about 36 million possibilities. My generator cranks out over 2 million IDs per second.
 
-The fix was one character: changing `== 0` to `== 1`. That's the kind of bug that can survive code review, pass unit tests that only check format, and only surface when you test against an external validator.
+That means I can find your ID number in 18 seconds.
 
-**Lesson: always validate against a ground truth source, not just your own implementation.**
+Not hours. Not days. Eighteen seconds on a laptop.
 
----
+Once someone has a valid ID number, the doors that open are alarming. They can probe login pages and registration forms across services to see which ID numbers are active accounts, without ever triggering an invalid format error. They can walk through identity verification checks on government portals, insurance sites, and credit bureaus that treat a correct ID number as proof of identity. They can call your mobile carrier, recite the ID number, pass verification, and initiate a SIM swap, which gives them your one-time passwords, which gives them your bank account. They can register for government grants in your name, which is not a hypothetical because SASSA fraud has been front page news in South Africa for years and keeps getting more sophisticated. They can combine databases of valid ID numbers with common passwords for credential stuffing attacks tailored specifically to the South African market.
 
-## CLI Design: Making It Usable
+And the thing is, none of this requires hacking anything. The tool I built doesn't exploit a vulnerability in any system. It just does maths. The same maths a university student could do with a calculator and enough patience. All I did was make it fast enough that the scale of the problem becomes impossible to pretend doesn't exist.
 
-The original script hardcoded everything — year range, output file, no way to generate just a few IDs without editing the code. I added `argparse` to make it a proper CLI tool:
+The real vulnerability here is not my generator. The real vulnerability is that sixty million people's access to banking, healthcare, telecommunications, and government services is gated by a number with roughly 30 bits of entropy. For some context, that's less randomness than a 9-character password. And unlike a password, you can never change it. It's yours for life.
 
-```bash
-# Generate 200 validated IDs
-python gen.py --validate -n 200
+The SA ID number was designed in the 1960s as a way to identify people on paper forms. It was meant to be written on documents, spoken over the phone, printed on laminated cards. It was an identifier, the same category as a name or a postal address. Nobody intended it to be proof of identity. But over the decades, digital systems co-opted it as exactly that, because it was convenient. And nobody stopped to ask whether convenient and secure were the same thing.
 
-# Estimate output size before committing to a full run
-python gen.py --dry-run
-# Range: 1900-2026 (1524 months)
-# Estimated IDs: 927,720,000
-# Estimated file size: 12.1 GB
+They are not.
 
-# Custom range with 8 workers
-python gen.py -s 1980 -e 2000 -w 8 -o output.txt
-```
 
-The `--dry-run` flag turned out to be essential. When your output file is 12 GB, you want to know that before you start.
+What actually needs to change
 
-Live progress reporting shows percentage, count, and throughput in real-time:
+These are not easy fixes and I'm not pretending they are. But they are necessary and overdue.
 
-```
-[ 41.7%] 5/12 months | 3,040,000 IDs | 1,989,598 IDs/s
-```
+Stop treating ID numbers like passwords. They identify you. They do not prove you are you. Any system that treats a correct ID number as sufficient verification is broken by design, full stop.
 
----
+Add multi-factor authentication to everything. If the only thing between a fraudster and someone's savings account is 13 predictable digits, that is not security. That is a polite suggestion. Biometrics, OTPs, hardware tokens, anything. Just add something.
 
-## The Real-World Impact: Why This Matters
+Detect and block enumeration. If an IP address is querying ten thousand ID numbers per minute against your API, that is not a customer. That is an attack. Rate limit it. Flag it. Investigate it.
 
-South African ID numbers aren't just numbers on a card. They are the **single key** to a person's entire digital life in the country. Banks, mobile carriers, healthcare providers, SASSA grants, voter registration, credit bureaus — they all authenticate using the 13-digit ID number. In many cases, **the ID number alone** is enough to pass identity verification.
+Tokenise the number. Stop passing raw ID numbers between systems like we're still faxing things. Use tokenised references that are meaningless outside their original context. The financial industry figured this out with credit card numbers years ago. There's no reason ID numbers should be any different.
 
-That's a problem.
+Acknowledge the problem publicly. SIM swap fraud costs South Africans hundreds of millions of rands every year. Grant fraud is a recurring national scandal. The 13-digit ID number system is not equipped for the digital world it's being asked to secure, and pretending otherwise doesn't protect a single person.
 
-### The Scale of Exposure
 
-This tool demonstrates that generating every valid SA ID number is computationally trivial. A commodity laptop with 4 cores can produce **the entire keyspace** — every valid ID number from 1900 to 2026 — in under an hour. That's approximately **927 million valid numbers**.
+Why I published this
 
-For a targeted attack, the scope narrows dramatically. If an attacker knows a person's approximate age (say, born between 1990 and 1995), their gender, and that they're an SA citizen, the search space collapses to roughly **36 million possibilities**. With the generator producing over 2 million IDs per second, that's an **18-second exhaustive search**.
+I published this tool because I believe awareness forces action, and polite silence doesn't.
 
-### What an Attacker Can Do With Valid IDs
+Every valid ID number this generator produces could be computed by hand by anyone who can read the publicly documented format and do basic arithmetic. I didn't discover a secret. I didn't crack a code. I pointed at a door that was never locked and said, hey, that door was never locked.
 
-- **Account enumeration**: Many South African services use the ID number as a username or lookup key. Valid IDs let an attacker enumerate which numbers are registered on a platform without triggering invalid-format errors.
-- **Identity fraud**: Systems that verify identity by asking for the ID number — without additional authentication factors — are trivially bypassable. This includes some government portals, insurance lookups, and credit checks.
-- **SIM swap preparation**: Mobile carriers that use ID numbers as part of their verification process are vulnerable. A valid ID number is the first step in a SIM swap attack, which can then be used to intercept OTPs and drain bank accounts.
-- **SASSA and grant fraud**: South Africa's social grant system has been repeatedly targeted by fraudsters using stolen or generated ID numbers to register for grants.
-- **Credential stuffing**: Combine generated ID numbers with common passwords or leaked password databases, and you have a credential stuffing attack tailored to the South African market.
+My hope is that this pushes the conversation forward. That the next time a bank or telco or government department designs a verification flow, someone in the room says, the ID number alone is not enough. That engineers building South African systems start treating the ID number like what it is, a public identifier, not a secret.
 
-### The Systemic Problem
+Until that shift happens, sixty million South Africans are trusting their digital lives to thirteen digits and the assumption that nobody will bother doing the maths.
 
-The fundamental issue is that SA ID numbers were designed in an era when knowing someone's number implied you had physical access to their identity document. They were **identifiers**, not **authenticators**. But decades of digital systems have treated them as both.
+I did the maths. It took 18 seconds.
 
-A 13-digit number with a deterministic checksum provides **zero secrecy**. The Luhn check digit adds exactly **one digit of validation** — it catches typos, not attackers. The entire format is predictable: if you know someone's birthday and gender, you've already eliminated 99.7% of the keyspace.
 
-Compare this to a randomly generated UUID (128 bits of entropy) or even a basic API key. The SA ID number has roughly **30 bits of effective entropy** for a known birth year — less than a 9-character random password.
+For developers, the legitimate use cases
 
-### What Should Change
+This tool has practical, constructive applications beyond proving a security point.
 
-1. **Stop using ID numbers as authenticators.** They should be treated as public identifiers — like an email address — not as proof of identity.
-2. **Mandatory multi-factor authentication.** Any system that currently accepts "ID number + name" as sufficient verification is broken. Add biometrics, OTPs, or hardware tokens.
-3. **Rate limiting and monitoring.** Services should detect and block sequential or bulk ID number lookups. If someone is querying thousands of ID numbers per minute, that's not a customer.
-4. **Tokenisation.** Instead of passing raw ID numbers between systems, use tokenised references that are meaningless outside their original context.
-5. **National digital identity reform.** South Africa needs a modern digital identity framework that doesn't rely on a 1960s-era numbering scheme as the backbone of authentication.
+If you're building anything that accepts SA ID numbers, you need valid test data that covers the edge cases. Leap years. February 29th birthdays. Boundary dates at the start and end of months. Both citizenship values. The full gender sequence range. Real validators need real test data, and making it up by hand doesn't scale.
 
-### Responsible Disclosure
+You can also use the output to validate your own ID checking logic. Run your validator against a known-good dataset and see if it accepts everything it should and rejects everything it shouldn't.
 
-This tool is published for **security research and awareness**. The vulnerability isn't in the tool — it's in the systems that treat a predictable, deterministic number as a secret. Every valid ID number this tool generates could also be computed by hand with enough patience. The generator just makes the scale of the problem impossible to ignore.
+For authorized penetration testing engagements, this provides the kind of test data you need to assess how systems handle valid but unauthorized ID number submissions.
 
-The goal is to push organisations — banks, telecoms, government agencies — to stop relying on ID numbers as a security boundary. Until they do, every South African's digital identity is protected by nothing more than a 1950s checksum algorithm and the assumption that attackers can't count to 10,000.
+And for academic work, there's genuine research value in analyzing the entropy characteristics, check digit distributions, and structural predictability of national ID schemes.
 
----
+The repo is at github.com/s-b-repo/wafrica-algo if you want to look at the code or run it yourself. It's pure Python, no dependencies, runs on anything with Python 3.7 or later.
 
-## Use Cases
 
-Beyond the security implications, the tool has legitimate applications:
+What I took away from all of this
 
-- **Software testing**: Generate valid test data covering edge cases — leap years, boundary dates, both citizenship values, all gender ranges
-- **Data validation**: Verify that your ID validation logic correctly accepts valid numbers and rejects invalid ones
-- **Penetration testing**: Authorised security assessments of systems that use ID numbers for authentication
-- **Statistical analysis**: Study the distribution of check digits, gender sequences, or date patterns
-- **Academic research**: Analyse the entropy and predictability of national ID schemes
+The Luhn algorithm shows up everywhere once you start looking. Credit cards, IMEI numbers on phones, national ID systems. Understanding how it works opens up a whole family of validation systems to examination.
 
----
+Getting one character wrong in the implementation was the difference between 900 million valid IDs and 900 million convincing fakes. Testing against your own code isn't testing. You have to validate against something external.
 
-## Technical Details
+Making something fast changes what it means. A script that runs for a week is an academic curiosity. A tool that finishes in an hour is a demonstration of a real problem. The underlying maths is identical. The impact is completely different.
 
-The full source is on GitHub: [wafrica-algo](https://github.com/s-b-repo/wafrica-algo)
+And most importantly, convenience is how security fails. ID numbers didn't become authenticators because they're secure. They became authenticators because they were easy. That's how most security problems start, not with a sophisticated attack, but with a shortcut nobody questioned until it was too late.
 
-**Stack:**
-- Python 3.7+ (no external dependencies)
-- `multiprocessing.Pool` for parallelism
-- `calendar` module for date validation
-- `argparse` for CLI
 
-**Output format:** One ID per line, plain text. A full 1900-2026 run produces approximately 927 million IDs in a 12 GB file.
-
-**Memory:** Work is chunked by month (~600K IDs per chunk, ~8 MB per worker). Even a machine with 4 GB of RAM can generate the full dataset.
-
----
-
-## Key Takeaways
-
-1. **The Luhn algorithm is everywhere** — credit cards, IMEI numbers, SA IDs. Understanding it unlocks a whole class of validation logic.
-
-2. **Direction matters in Luhn** — doubling even vs. odd positions produces completely different check digits. One character in the code. Completely different output.
-
-3. **Multiprocessing is free performance** — if your work can be split into independent chunks, `multiprocessing.Pool` turns a single-core crawl into a multicore sprint with minimal code changes.
-
-4. **External libraries aren't always faster** — sometimes inlining the critical path and dropping the abstraction gives you a 7x speedup with zero dependencies.
-
-5. **Always validate against ground truth** — your implementation might be self-consistent but wrong. Test against a real-world validator before you trust your output.
-
----
-
-*Built with Python. Validated against real-world SA ID checkers. Zero dependencies.*
+Built with Python. Validated against real-world SA ID checkers. Published because the maths was always public, and now the conversation should be too.
